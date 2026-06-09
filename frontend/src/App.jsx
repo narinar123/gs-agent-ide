@@ -40,13 +40,32 @@ import {
   ExternalLink
 } from 'lucide-react';
 
+import GoogleAuthModal from './components/universal/GoogleAuthModal';
+import BillingModal from './components/universal/BillingModal';
+import AIChatbot from './components/universal/AIChatbot';
+import GoogleSheetsSync from './components/universal/GoogleSheetsSync';
+import SocialShare from './components/universal/SocialShare';
+
 export default function App() {
   // Authentication & Access state
-  const [currentUser, setCurrentUser] = useState(null);
+  const [currentUser, setCurrentUser] = useState(() => {
+    const saved = localStorage.getItem("google_user");
+    return saved ? JSON.parse(saved) : null;
+  });
   const [emailInput, setEmailInput] = useState('');
-  const [showLoginModal, setShowLoginModal] = useState(true);
-  const [paymentCompleted, setPaymentCompleted] = useState(false);
+  const [showLoginModal, setShowLoginModal] = useState(() => {
+    return !localStorage.getItem("google_user");
+  });
+  const [paymentCompleted, setPaymentCompleted] = useState(() => {
+    const savedUser = localStorage.getItem("google_user");
+    if (savedUser) {
+      const user = JSON.parse(savedUser);
+      if (user.email.trim().toLowerCase() === 'pranu21m@gmail.com') return true;
+    }
+    return localStorage.getItem("payment_completed") === "true";
+  });
   const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [isBillingOpen, setIsBillingOpen] = useState(false);
 
   // Sidebar Toggles
   const [showLeftSidebar, setShowLeftSidebar] = useState(true);
@@ -352,33 +371,7 @@ export default function App() {
   return (
     <div className="flex h-screen w-screen bg-[#111111] text-[#cccccc] font-sans overflow-hidden">
       
-      {/* Login Modal */}
-      {showLoginModal && (
-        <div className="fixed inset-0 bg-black/85 backdrop-blur-md flex items-center justify-center z-[100] p-4">
-          <div className="bg-[#1e1e1e] border border-[#2a2a2a] rounded-xl max-w-sm w-full p-6 text-center shadow-2xl">
-            <img src="https://www.gsgroups.net/gslogo.png" alt="GS" className="w-16 h-16 mx-auto mb-4 object-contain" />
-            <h2 className="text-xl font-bold text-white mb-2">GS Agentic IDE Access</h2>
-            <p className="text-xs text-[#888888] mb-6">Enter your email to authenticate. Access is restricted based on rights.</p>
-            
-            <form onSubmit={handleLogin} className="space-y-4">
-              <input
-                type="email"
-                required
-                value={emailInput}
-                onChange={(e) => setEmailInput(e.target.value)}
-                placeholder="email@example.com"
-                className="w-full bg-[#252526] border border-[#2d2d2e] rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-[#0e639c]"
-              />
-              <button 
-                type="submit"
-                className="w-full bg-[#0e639c] hover:bg-[#1177bb] text-white py-2.5 rounded-lg font-medium transition-colors shadow-lg text-sm"
-              >
-                Sign In
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* Login Modal handled globally by GoogleAuthModal */}
 
       {/* 1. Left Sidebar Column (Width: 240px) */}
       {showLeftSidebar && (
@@ -479,9 +472,35 @@ export default function App() {
           </div>
 
           {/* Footer Controls */}
-          <div className="p-3 border-t border-[#2a2a2a] flex items-center justify-between text-[#888888] text-xs">
-            <button className="flex items-center gap-2 hover:text-white transition-colors"><Settings size={14} /> Settings</button>
-            <span className="font-mono text-[9px] bg-[#252526] px-1.5 py-0.5 rounded">v1.2.0</span>
+          <div className="p-3 border-t border-[#2a2a2a] flex flex-col gap-2 text-[#888888] text-xs">
+            {currentUser && (
+              <div className="flex items-center justify-between border-b border-[#2a2a2a] pb-2 mb-1">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <img src={currentUser.photo || "https://www.gsgroups.net/gslogo.png"} alt="User" className="w-5 h-5 rounded-full object-contain shrink-0" />
+                  <span className="text-[10px] font-semibold text-white truncate max-w-[100px]">{currentUser.name}</span>
+                </div>
+                <button
+                  onClick={() => {
+                    localStorage.removeItem("google_user");
+                    localStorage.removeItem("payment_completed");
+                    window.location.reload();
+                  }}
+                  className="text-[10px] hover:text-red-400 flex items-center gap-1 transition-colors shrink-0"
+                  title="Sign Out"
+                >
+                  <LogOut size={12} /> Sign Out
+                </button>
+              </div>
+            )}
+            <div className="flex items-center justify-between">
+              <button 
+                onClick={() => setIsBillingOpen(true)}
+                className="flex items-center gap-2 hover:text-white transition-colors"
+              >
+                <CreditCard size={14} /> Billing Plan
+              </button>
+              <span className="font-mono text-[9px] bg-[#252526] px-1.5 py-0.5 rounded">v1.2.0</span>
+            </div>
           </div>
         </div>
       )}
@@ -516,6 +535,14 @@ export default function App() {
             </div>
             
             <div className="flex items-center gap-3">
+              <SocialShare 
+                shareUrl={window.location.href} 
+                title="GSQODER.AI IDE Workspace" 
+              />
+              <GoogleSheetsSync 
+                sheetTitle={`GSQODER_${activeWorkspace}`} 
+                getData={() => ({ activeWorkspace, filesCount: filesChanged.length })} 
+              />
               <button className="flex items-center gap-1.5 bg-[#0e639c]/25 border border-[#0e639c] hover:bg-[#0e639c]/40 text-white font-semibold text-[10px] px-3 py-1.5 rounded transition-all shadow">
                 <Cpu size={12} /> Install IDE
               </button>
@@ -626,14 +653,13 @@ export default function App() {
                         Arena.ai playground and webhook integrations are locked behind the pro subscription.
                       </p>
                       
-                      <div className="text-3xl font-extrabold text-white mb-6">$15 <span className="text-xs font-medium text-[#888888]">/ month</span></div>
+                      <div className="text-3xl font-extrabold text-white mb-6">₹299 <span className="text-xs font-medium text-[#888888]">/ month</span></div>
 
                       <button 
-                        onClick={handlePayment}
-                        disabled={checkoutLoading}
+                        onClick={() => setIsBillingOpen(true)}
                         className="w-full flex items-center justify-center gap-2 bg-[#0e639c] hover:bg-[#1177bb] text-white py-3 rounded-lg font-medium transition-colors shadow-lg text-sm"
                       >
-                        <CreditCard size={18} /> {checkoutLoading ? "Processing Payment..." : "Unlock Pro Features"}
+                        <CreditCard size={18} /> Unlock Pro Features
                       </button>
                       <p className="text-[10px] text-[#555555] mt-3">Admin pranu21m@gmail.com automatically bypasses this gate.</p>
                     </div>
@@ -936,6 +962,21 @@ export default function App() {
         )}
 
       </div>
+
+      {/* Universal Integrations */}
+      <GoogleAuthModal />
+      
+      <BillingModal 
+        isOpen={isBillingOpen} 
+        onClose={() => setIsBillingOpen(false)} 
+        userEmail={currentUser?.email || "candidate@example.com"} 
+      />
+
+      <AIChatbot 
+        projectName="GSQODER.AI IDE" 
+        contextPrompt="This project is the GSQODER.AI IDE console on Mac OS, managing various background agents, workspace files, arena models, and compiling commands." 
+      />
+
     </div>
   );
 }
