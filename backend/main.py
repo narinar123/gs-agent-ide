@@ -1,15 +1,16 @@
 import os
-from fastapi import FastAPI, Request, HTTPException, Depends, Header
+from fastapi import FastAPI, Request, HTTPException, Header
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Dict, Optional
 from dotenv import load_dotenv
 from agent_service import stream_agent_chat
+from tools.code_tools import python_interpreter
 
 load_dotenv()
 
-app = FastAPI(title="Antigravity IDE Backend API with Arena.ai Integration")
+app = FastAPI(title="Antigravity IDE Backend API with Dynamic Workspace")
 
 # Enable CORS for frontend connection
 app.add_middleware(
@@ -43,6 +44,9 @@ class WebhookPayload(BaseModel):
     tool_reliability: str
     coding_score: float
 
+class ExecuteRequest(BaseModel):
+    code: str
+
 @app.get("/")
 def read_root():
     return {"status": "running", "agent": "Antigravity Active"}
@@ -51,7 +55,6 @@ def read_root():
 def login(request: LoginRequest):
     email = request.email.strip().lower()
     
-    # Authenticate and set rights
     if email == "pranu21m@gmail.com":
         return {
             "email": email,
@@ -61,7 +64,6 @@ def login(request: LoginRequest):
             "token": "admin_session_token_pranu21m"
         }
     else:
-        # Standard user (starts with payment required)
         return {
             "email": email,
             "role": "user",
@@ -72,19 +74,15 @@ def login(request: LoginRequest):
 
 @app.get("/api/arena/leaderboard")
 def get_leaderboard(authorization: Optional[str] = Header(None)):
-    # Simple check for Admin / Paid user rights
     if not authorization or "restricted" in authorization:
         raise HTTPException(status_code=403, detail="Payment Required: Please upgrade to Pro or login as Admin to view Arena.ai features.")
-    
     return {"leaderboard": ARENA_LEADERBOARD}
 
 @app.post("/api/arena/webhook")
 def arena_webhook(payload: WebhookPayload, authorization: Optional[str] = Header(None)):
-    # Webhook restricted strictly to Admin
     if not authorization or "admin" not in authorization:
         raise HTTPException(status_code=403, detail="Unauthorized: Webhook receiver is restricted to Admin (pranu21m@gmail.com).")
     
-    # Update or add new agent score
     for item in ARENA_LEADERBOARD:
         if item["model"].lower() == payload.model.lower():
             item["elo"] = payload.elo
@@ -93,7 +91,6 @@ def arena_webhook(payload: WebhookPayload, authorization: Optional[str] = Header
             item["coding_score"] = payload.coding_score
             return {"status": "success", "message": f"Updated {payload.model}"}
             
-    # If new model, append
     new_rank = len(ARENA_LEADERBOARD) + 1
     new_item = {
         "rank": new_rank,
@@ -105,6 +102,51 @@ def arena_webhook(payload: WebhookPayload, authorization: Optional[str] = Header
     }
     ARENA_LEADERBOARD.append(new_item)
     return {"status": "success", "message": f"Added new model {payload.model}"}
+
+# Direct code execution endpoint
+@app.post("/api/execute")
+def execute_code(request: ExecuteRequest):
+    output = python_interpreter(request.code)
+    return {"output": output}
+
+# DYNAMIC: Fetch list of folders on Desktop
+@app.get("/api/projects")
+def get_desktop_projects():
+    try:
+        desktop_path = os.path.expanduser("~/Desktop")
+        if not os.path.exists(desktop_path):
+            return {"projects": ["gsgpt", "gs01", "LMPROJECTS"]}
+        
+        projects = []
+        for name in os.listdir(desktop_path):
+            full_path = os.path.join(desktop_path, name)
+            if os.path.isdir(full_path) and not name.startswith("."):
+                projects.append(name)
+        
+        # Sort for display consistency
+        projects.sort()
+        return {"projects": projects if projects else ["gsgpt", "gs01", "LMPROJECTS"]}
+    except Exception:
+        return {"projects": ["gsgpt", "gs01", "LMPROJECTS"]}
+
+# DYNAMIC: Fetch changed files in workspace
+@app.get("/api/files-changed")
+def get_changed_files():
+    # Return a real list of project files for the IDE
+    try:
+        files = []
+        # Return key files in our project
+        project_dir = os.path.expanduser("~/scratch/gs-agent-ide")
+        if os.path.exists(project_dir):
+            for root, dirs, filenames in os.walk(project_dir):
+                if ".git" in root or "node_modules" in root:
+                    continue
+                for f in filenames:
+                    rel_path = os.path.relpath(os.path.join(root, f), project_dir)
+                    files.append(rel_path)
+        return {"files": files[:8] if files else ["App.jsx", "main.py", "agent_service.py"]}
+    except Exception:
+        return {"files": ["App.jsx", "main.py", "agent_service.py"]}
 
 @app.post("/api/chat")
 async def chat_endpoint(request: ChatRequest):
